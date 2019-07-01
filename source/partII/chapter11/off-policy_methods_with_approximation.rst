@@ -23,7 +23,7 @@
 
 由于函数近似的离策略学习挑战的第二部分需要更多的东西，因为离策略情况下的更新分布不是根据在策略分布。
 在策略分布对半梯度方法的稳定性很重要。已经探索了两种一般方法来解决这个问题。
-一种是再次使用重要性抽样方法，这次将更新分布转回到在策略上的分布，以便保证半梯度方法收敛（在线性情况下）。
+一种是再次使用重要性采样方法，这次将更新分布转回到在策略上的分布，以便保证半梯度方法收敛（在线性情况下）。
 另一种是开发真正的梯度方法，不依赖于任何特殊的稳定性分布。
 我们提出了基于这两种方法的方法。这是一个前沿的研究领域，目前尚不清楚这些方法中哪一个在实践中最有效。
 
@@ -180,7 +180,7 @@
 **虚线** 动作使系统以相同的概率进入六个上边状态中的一个，而 **实线** 动作将系统带到第七个状态。
 行为策略 :math:`b` 以概率 :math:`\frac{6}{7}` 和 :math:`\frac{1}{7}` 选择虚线和实线动作，
 使得其下的下一状态分布是均匀的（对于所有非终结状态相同），这也是每回合的起始分布。
-目标政策 :math:`\pi` 总是采取实线的行动，因此在策略的分布（对于 :math:`\pi`）集中在第七个状态。
+目标策略 :math:`\pi` 总是采取实线的行动，因此在策略的分布（对于 :math:`\pi`）集中在第七个状态。
 所有转移的奖励都是零。折扣率 :math:`\gamma=0.99`。
 
 .. figure:: images/figure-11.1.png
@@ -227,7 +227,7 @@
 
 假设在Baird的反例中，我们实际上将价值函数一直改为最佳的最小二乘近似，而不是在每次迭代中只朝着预期的一步回报迈出一步。
 这会解决不稳定问题吗？当然，如果特征向量 :math:`\{\mathbf{x}(s) : s \in \mathcal{S}\}` 形成一个线性独立的集合，
-就像在Baird的反例中那样，因为那样在每次迭代时都可以进行精确逼近，并且该方法简化为标准的表格DP 。
+就像在Baird的反例中那样，因为那样在每次迭代时都可以进行精确近似，并且该方法简化为标准的表格DP 。
 但当然，这里的重点是考虑 *无法* 获得精确解决方案的情况。在这种情况下，即使在每次迭代时形成最佳近似值，也不能保证稳定性，如示例所示。
 
 .. figure:: images/example-11.1.png
@@ -496,7 +496,7 @@ Bellman误差向量如图11.3所示，作为应用 *Bellman算子*
 在本书到目前为止研究的算法中，只有蒙特卡罗方法才是真正的SGD方法。
 这些方法在在策略和离策略训练以及一般非线性（可微分）函数近似器之间健壮地收敛，
 尽管它们通常比不是SGD方法的具有自举的半梯度方法慢。
-正如我们在本章前面所见，半梯度方法可能在离政策训练中，
+正如我们在本章前面所见，半梯度方法可能在离策略训练中，
 以及在非线性函数近似的设计案例（Tsitsiklis和Van Roy，1997）中偏离。
 使用真正的SGD方法，这种偏离是不可能的。
 
@@ -783,21 +783,317 @@ SGD的吸引力是如此之大，以至于已经付出了巨大的努力来寻�
 11.7 梯度TD方法
 -----------------
 
+我们现在考虑用于最小化 :math:`\overline{\mathrm{PBE}}` 的SGD方法。
+作为真正的SGD方法，即使在非策略训练和非线性函数近似下，这些 *梯度-TD方法* 也具有稳健的收敛特性。
+请记住，在线性情况下，始终存在精确解，
+即TD固定点 :math:`\mathbf{W}_{\mathrm{TD}}`，:math:`\overline{\mathrm{PBE}}` 为零。
+这种解决方案可以通过最小二乘法（第9.8节）找到，但只能通过参数数量的二次 :math:`O\left(d^{2}\right)` 复杂度的方法找到。
+我们寻求一种SGD方法，该方法应该是 :math:`O(d)` 并且具有稳健的收敛特性。
+梯度-TD方法接近于实现这些目标，代价是计算复杂度大幅加倍。
 
-11.8 强调TD方法
----------------
+为了得到 :math:`\overline{\mathrm{PBE}}` 的SGD方法（假设线性函数近似），我们首先用矩阵术语扩展和重写目标（11.22）：
+
+.. math::
+
+    \begin{aligned}
+    \overline{\mathrm{PBE}}(\mathbf{w}) &=\left\|\Pi \overline{\delta}_{\mathbf{w}}\right\|_{\mu}^{2} \\
+    &=\left(\Pi \overline{\delta}_{\mathbf{w}}\right)^{\top} \mathbf{D} \Pi \overline{\delta}_{\mathbf{w}} & \text{(从(11.15)得出)}\\
+    &=\overline{\delta}_{\mathbf{w}}^{\top} \Pi^{\top} \mathbf{D} \Pi \overline{\delta}_{\mathbf{w}} \\
+    &=\overline{\delta}_{\mathbf{w}}^{\top} \mathbf{D} \mathbf{X}\left(\mathbf{X}^{\top} \mathbf{D} \mathbf{X}\right)^{-1} \mathbf{X}^{\top} \mathbf{D} \overline{\delta}_{\mathbf{w}} & \text{(11.25)} \\
+    &\text { (使用 }(11.14) \text { 和单位矩阵 } \Pi^{\top} \mathbf{D} \Pi=\mathbf{D} \mathbf{X}\left(\mathbf{X}^{\top} \mathbf{D} \mathbf{X}\right)^{-1} \mathbf{X}^{\top} \mathbf{D} ) \\
+    &=\left(\mathbf{X}^{\top} \mathbf{D} \overline{\delta}_{\mathbf{w}}\right)^{\top}\left(\mathbf{X}^{\top} \mathbf{D} \mathbf{X}\right)^{-1}\left(\mathbf{X}^{\top} \mathbf{D} \overline{\delta}_{\mathbf{w}}\right) &\text{(11.26)}
+    \end{aligned}
+
+关于 :math:`\mathbf{w}` 的梯度是
+
+.. math::
+
+    \nabla \overline{\mathrm{PBE}}(\mathbf{w})=2 \nabla\left[\mathbf{X}^{\top} \mathbf{D} \overline{\delta}_{\mathbf{w}}\right]^{\top}\left(\mathbf{X}^{\top} \mathbf{D} \mathbf{X}\right)^{-1}\left(\mathbf{X}^{\top} \mathbf{D} \overline{\delta}_{\mathbf{w}}\right)
+
+要将此转换为SGD方法，我们必须在每个具有此数量作为其预期值的时间步骤上进行采样。
+让我们把 :math:`\mu` 作为行为策略下访问的状态的分布。
+然后，上述所有三个因子都可以根据此分布的期望来书写。例如，最后一个因子可以写成
+
+.. math::
+
+    \mathbf{X}^{\top} \mathbf{D} \overline{\delta}_{\mathbf{w}}=\sum_{s} \mu(s) \mathbf{x}(s) \overline{\delta}_{\mathbf{w}}(s)=\mathbb{E}\left[\rho_{t} \delta_{t} \mathbf{x}_{t}\right]
+
+这只是半梯度TD(0)更新（11.2）的期望。第一个因子是此更新的梯度的转置：
+
+.. math::
+
+    \begin{aligned}
+    \nabla \mathbb{E}\left[\rho_{t} \delta_{t} \mathbf{x}_{t}\right]^{\top} &=\mathbb{E}\left[\rho_{t} \nabla \delta_{t}^{\top} \mathbf{x}_{t}^{\top}\right] \\
+    &=\mathbb{E}\left[\rho_{t} \nabla\left(R_{t+1}+\gamma \mathbf{w}^{\top} \mathbf{x}_{t+1}-\mathbf{w}^{\top} \mathbf{x}_{t}\right)^{\top} \mathbf{x}_{t}^{\top}\right] & (\text{使用回合} \delta_{t}) \\
+    &=\mathbb{E}\left[\rho_{t}\left(\gamma \mathbf{x}_{t+1}-\mathbf{x}_{t}\right) \mathbf{x}_{t}^{\top}\right]
+    \end{aligned}
+
+最后，中间因子是特征向量的期望外积矩阵的逆：
+
+.. math::
+
+    \mathbf{X}^{\top} \mathbf{D X}=\sum_{s} \mu(s) \mathbf{x}_{s} \mathbf{x}_{s}^{\top}=\mathbb{E}\left[\mathbf{x}_{t} \mathbf{x}_{t}^{\top}\right]
+
+将这些期望替换为我们表达 :math:`\overline{\mathrm{PBE}}` 梯度的三个因子，我们得到了
+
+.. math::
+
+    \nabla \overline{\mathrm{PBE}}(\mathbf{w})=2 \mathbb{E}\left[\rho_{t}\left(\gamma \mathbf{x}_{t+1}-\mathbf{x}_{t}\right) \mathbf{x}_{t}^{\top}\right] \mathbb{E}\left[\mathbf{x}_{t} \mathbf{x}_{t}^{\top}\right]^{-1} \mathbb{E}\left[\rho_{t} \delta_{t} \mathbf{x}_{t}\right]
+    \tag{11.27}
+
+我们通过以这种形式编写梯度来取得任何进展可能并不明显。它是三个表达式的乘积，第一个和最后一个不是独立的。
+它们都依赖于下一个特征向量 :math:`\mathbf{x}_{t+1}`；我们不能简单地对这两个期望进行抽样，然后将样本相乘。
+这将为我们提供梯度的有偏估计，就像在朴素残差梯度算法中一样。
+
+另一个想法是分别估计三个期望值，然后将它们组合起来产生梯度的无偏估计。
+这将起作用，但需要大量的计算资源，特别是存储前两个期望值，即 :math:`d \times d` 矩阵，并计算第二个的逆。
+这个想法可以改进。如果估计并存储了三个期望中的两个，则可以对第三个期望进行采样并与两个存储的量一起使用。
+例如，您可以存储后两个量的估计值（使用第9.8节中的增量逆更新技术），然后对第一个表达式进行采样。
+不幸的是，整体算法仍然具有二次复杂度（ :math:`O\left(d^{2}\right)` 阶）。
+
+分别存储一些估计然后将它们与样本组合的想法是一个很好的想法，也用在梯度-TD方法中。
+梯度-TD方法估计并存储第二个因子的 *乘积* （11.27）。
+这些因子是 :math:`d \times d` 矩阵和 :math:`d` 维向量，因此它们的乘积只是一个 :math:`d` 维向量，
+就像 :math:`\mathbf{w}` 本身一样。我们将第二个学习的向量表示为 :math:`\mathbf{v}`：
+
+.. math::
+
+    \mathbf{v} \approx \mathbb{E}\left[\mathbf{x}_{t} \mathbf{x}_{t}^{\top}\right]^{-1} \mathbb{E}\left[\rho_{t} \delta_{t} \mathbf{x}_{t}\right]
+    \tag{11.28}
+
+这种形式对于线性监督学习的学生来说是熟悉的。
+它是线性最小二乘问题的解决方案，试图从特征中近似 :math:`\rho_{t} \delta_{t}`。
+用于递增地找到最小化预期平方误差
+:math:`(\mathbf{v}^{\top} \mathbf{x}_{t}-\rho_{t} \delta_{t})^{2}`
+的向量 :math:`\mathbf{v}` 的标准SGD方法被称为最小均方（LMS）规则（这里增加了重要性采样率）：
+
+.. math::
+
+    \mathbf{v}_{t+1} \doteq \mathbf{v}_{t}+\beta \rho_{t}\left(\delta_{t}-\mathbf{v}_{t}^{\top} \mathbf{x}_{t}\right) \mathbf{x}_{t}
+
+其中 :math:`\beta>0` 是另一个步长参数。我们可以使用这种方法有效地实现（11.28） :math:`O(d)` 存储和每步计算。
+
+给定存储的估计 :math:`\mathbf{v}_{t}` 近似（11.28），
+我们可以使用基于（11.27）的SGD方法更新我们的主参数向量 :math:`\mathbf{w}_{t}`。最简单的这样的规则是
+
+.. math::
+
+    \begin{aligned}
+    \mathbf{w}_{t+1} &=\mathbf{w}_{t}-\frac{1}{2} \alpha \nabla \overline{\mathrm{PBE}}\left(\mathbf{w}_{t}\right) & \text{(一般的SGD规则)}\\
+    &=\mathbf{w}_{t}-\frac{1}{2} \alpha 2 \mathbb{E}\left[\rho_{t}\left(\gamma \mathbf{x}_{t+1}-\mathbf{x}_{t}\right) \mathbf{x}_{t}^{\top}\right] \mathbb{E}\left[\mathbf{x}_{t} \mathbf{x}_{t}^{\top}\right]^{-1} \mathbb{E}\left[\rho_{t} \delta_{t} \mathbf{x}_{t}\right] & \text{(由(11.27))}\\
+    &=\mathbf{w}_{t}-\frac{1}{2} \alpha 2 \mathbb{E}\left[\rho_{t}\left(\gamma_{t}-\gamma \mathbf{x}_{t+1}\right) \mathbf{x}_{t}^{\top}\right] \mathbb{E}\left[\mathbf{x}_{t} \mathbf{x}_{t}^{\top}\right]^{-1} \mathbb{E}\left[\rho_{t} \delta_{t} \mathbf{x}_{t}\right] & \text{(11.29)}\\
+    & \approx \mathbf{w}_{t}+\alpha \mathbb{E}\left[\rho_{t}\left(\mathbf{x}_{t}-\gamma \mathbf{x}_{t+1}\right) \mathbf{x}_{t}^{\top}\right] \mathbf{V}_{t} & \text{(基于(11.28))}\\
+    & \approx \mathbf{w}_{t}+\alpha \rho_{t}\left(\mathbf{x}_{t}-\gamma \mathbf{x}_{t+1}\right) \mathbf{x}_{t}^{\top} \mathbf{v}_{t} & \text{(采样)}
+    \end{aligned}
+
+该算法称为 *GTD2*。
+注意，如果首先完成最终内积（:math:`\mathbf{x}_{t}^{\top} \mathbf{v}_{t}`），
+则整个算法具有 :math:`O(d)` 复杂度。
+
+在替换 :math:`\mathbf{v}_{t}` 之前，可以通过执行一些更多的分析步骤来导出稍微更好的算法。
+从（11.29）继续：
+
+.. math::
+
+    \begin{aligned}
+    \mathbf{w}_{t+1} &=\mathbf{w}_{t}+\alpha \mathbb{E}\left[\rho_{t}\left(\mathbf{x}_{t}-\gamma \mathbf{x}_{t+1}\right) \mathbf{x}_{t}^{\top}\right] \mathbb{E}\left[\mathbf{x}_{t} \mathbf{x}_{t}^{\top}\right]^{-1} \mathbb{E}\left[\rho_{t} \delta_{t} \mathbf{x}_{t}\right] \\
+    &=\mathbf{w}_{t}+\alpha\left(\mathbb{E}\left[\rho_{t} \mathbf{x}_{t} \mathbf{x}_{t}^{\top}\right]-\gamma \mathbb{E}\left[\rho_{t} \mathbf{x}_{t+1} \mathbf{x}_{t}^{\top}\right]\right) \mathbb{E}\left[\mathbf{x}_{t} \mathbf{x}_{t}^{\top}\right]^{-1} \mathbb{E}\left[\rho_{t} \delta_{t} \mathbf{x}_{t}\right] \\
+    &=\mathbf{w}_{t}+\alpha\left(\mathbb{E}\left[\mathbf{x}_{t} \mathbf{x}_{t}^{\top}\right]-\gamma \mathbb{E}\left[\rho_{t} \mathbf{x}_{t+1} \mathbf{x}_{t}^{\top}\right]\right) \mathbb{E}\left[\mathbf{x}_{t} \mathbf{x}_{t}^{\top}\right]^{-1} \mathbb{E}\left[\rho_{t} \delta_{t} \mathbf{x}_{t}\right] \\
+    &=\mathbf{w}_{t}+\alpha\left(\mathbb{E}\left[\mathbf{x}_{t} \rho_{t} \delta_{t}\right]-\gamma \mathbb{E}\left[\rho_{t} \mathbf{x}_{t+1} \mathbf{x}_{t}^{\top}\right] \mathbb{E}\left[\mathbf{x}_{t} \mathbf{x}_{t}^{\top}\right]^{-1} \mathbb{E}\left[\rho_{t} \delta_{t} \mathbf{x}_{t}\right]\right) \\
+    &\approx \mathbf{w}_{t}+\alpha\left(\mathbb{E}\left[\mathbf{x}_{t} \rho_{t} \delta_{t}\right]-\gamma \mathbb{E}\left[\rho_{t} \mathbf{x}_{t+1} \mathbf{x}_{t}^{\top}\right] \mathbf{v}_{t}\right) & \text{(基于(11.28))} \\
+    &\approx \mathbf{w}_{t}+\alpha \rho_{t}\left(\delta_{t} \mathbf{x}_{t}-\gamma \mathbf{x}_{t+1} \mathbf{x}_{t}^{\top} \mathbf{v}_{t}\right) & \text{(采样)}
+    \end{aligned}
+
+如果最终内积（:math:`\mathbf{x}_{t}^{\top} \mathbf{v}_{t}`）首先完成，则再次为 :math:`O(d)`。
+该算法被称为 *具有梯度校正（TDC）的TD(0)*，或者作为 *GTD(0)*。
+
+图11.5显示了Baird反例中TDC的样本和预期行为。
+按照预期，:math:`\overline{\mathrm{PBE}}` 降至零，但请注意参数向量的各个分量不接近零。
+事实上，对于所有 :math:`s`，这些值仍远不是最优解，:math:`\hat{v}(s)=0`，
+其中 :math:`\mathbf{w}` 必须与 :math:`(1,1,1,1,1,1,4,-2)^{\top}` 成比例。
+在1000次迭代之后，我们仍然远离最佳解决方案，正如我们可以从 :math:`\overline{\mathrm{VE}}` 看到的那样，它几乎保持为2。
+系统实际上正在收敛到最优解，但是由于 :math:`\overline{\mathrm{PBE}}` 已经接近于零，因此进展非常缓慢。
+
+.. figure:: images/figure-11.5.png
+
+    **图11.5：** 关于Baird反例的TDC算法的行为。在左侧显示典型的单次运行，在右侧显示该算法的预期行为，
+    如果更新是同步完成的（类似于（11.9），除了两个TDC参数向量）。
+    步长为 :math:`\alpha=0.005` 且 :math:`\beta=0.05`。
+
+GTD2和TDC都涉及两个学习过程，
+一个用于 :math:`\mathbf{w}` 的主要学习过程和一个用于 :math:`\mathbf{v}` 的次要学习过程。
+主要学习过程的逻辑依赖于已经完成的次要学习过程，至少近似，而次要学习过程在不受第一个的影响的情况下进行。
+我们将这种不对称依赖称为 *级联*。在级联中，我们经常假设次要学习过程进展得更快，
+因此始终处于渐近值，准备好并准确地协助主要学习过程。
+这些方法的收敛证明经常明确地做出这个假设。这些被称为 *两次时间尺度（two-time-scale）* 的证明。
+快速时间尺度是次要学习过程的时间尺度，较慢的时间尺度是主要学习过程的时间尺度。
+如果 :math:`\alpha` 是主要学习过程的步长，:math:`\beta` 是次要学习过程的步长，
+那么这些收敛证明通常要求极限 :math:`\beta \rightarrow 0`
+和 :math:`\frac{\alpha}{\beta} \rightarrow 0`。
+
+梯度-TD方法是目前最容易理解和广泛使用的稳定离策略方法。行动价值和控制的扩展（GQ，Maei等，2010），
+资格迹（GTD(:math:`\lambda`)和GQ(:math:`\lambda`)，Maei，2011；Maei和Sutton，2010），
+以及非线性函数近似（Maei等，2009）。在半梯度TD和梯度TD之间还提出了混合算法（Hackman，2012；White and White，2016）。
+混合TD算法在目标和行为策略非常不同的状态下表现得像梯度-TD算法，并且在目标和行为策略相同的状态下表现得像半梯度算法。
+最后，将梯度TD思想与近端方法和控制变量的思想相结合，以产生更有效的方法（Mahadevan等，2014；Du等，2017）。
+
+
+11.8 强调TD方法（Emphatic-TD）
+------------------------------
+
+我们现在转向第二个主要策略，该策略已被广泛探索，以获得具有函数近似的廉价且有效的离策略学习方法。
+回想一下线性半梯度TD方法在策略分布下训练时是有效和稳定的，
+我们在9.4节中说明这与矩阵 :math:`\mathbf{A}` （9.11） [4]_ 的正定性
+和目标策略下的策略状态分布 :math:`\mu_{\pi}` 和状态转移概率 :math:`p(s | s, a)` 之间的匹配有关。
+在离策略学习中，我们使用重要性采样重新调整状态转换，以便它们适合于了解目标策略，但状态分布仍然是行为策略的分布。
+有一个不匹配。一个自然的想法是以某种方式重新调整状态，强调一些并且不再强调其他状态，以便将更新的分布返回到在策略的分布。
+然后会有一个匹配，稳定性和收敛将来自现有结果。这是强调-TD方法的概念，首先在第9.11节中引入了在策略培训。
+
+实际上，“在策略的分布”这个概念并不完全正确，因为有许多在策略分布，其中任何一个都足以保证稳定。
+考虑一个没有折扣的情回合问题。回合终止的方式完全取决于转换概率，但回合可能有几种不同的方式开始。
+然而，如果所有状态转换都是由目标策略引起的，则回合开始，然后产生的状态分布是在策略分布。
+在结束回合之前，您可能会开始接近终端状态并且仅访问几个具有高概率的状态。
+或者你可能会在很远的地方开始并在终止之前通过许多状态。
+两者都是在策略分布，并且使用线性半梯度方法对两者进行的训练将保证稳定。
+但是，只要所有遇到的状态都更新到终止，该过程就会启动，就会产生在策略分发。
+
+如果存在折扣，则可以将其视为部分或概率性终止以用于这些目的。如果 :math:`\gamma=0.9`，
+那么我们可以考虑概率为0.1，该过程在每个时步终止，然后立即在转换到的状态重新启动。
+折扣问题是在每一步都以概率 :math:`1-\gamma` 连续终止和重新启动的问题。
+这种考虑折扣的方式是一个更普遍的 *伪终止* 概念的例子，它不影响状态转换的顺序，但确实会影响学习过程和学习的数量。
+这种伪终止对于离策略学习非常重要，因为重启是可选的──记住我们可以以任何方式启动──并且终止可以减少在策略分布中保持包括遇到状态的需要。
+也就是说，如果我们不将新状态视为重启，那么快速折扣会给我们带来有限的在策略分布。
+
+用于学习回合状态值的一步法强调TD算法定义如下：
+
+.. math::
+
+    \begin{array}{l}
+    {\delta_{t}=R_{t+1}+\gamma \hat{v}\left(S_{t+1}, \mathbf{w}_{t}\right)-\hat{v}\left(S_{t}, \mathbf{w}_{t}\right)} \\
+    {\mathbf{w}_{t+1}=\mathbf{w}_{t}+\alpha M_{t} \rho_{t} \delta_{t} \nabla \hat{v}\left(S_{t}, \mathbf{w}_{t}\right)} \\
+    {M_{t}=\gamma \rho_{t-1} M_{t-1}+I_{t}}
+    \end{array}
+
+其中兴趣 :math:`I_t` 任意和重点 :math:`M_t` 被初始化为 :math:`M_{t-1}=0`。
+这个算法如何在Baird的反例上表现？图11.6显示了期望参数矢量分量的轨迹（对于所有 :math:`t`，:math:`I_t=1` 的情况）。
+有一些振荡，但最终一切都收敛，:math:`\overline{\mathrm{VE}}` 变为零。
+这些轨迹是通过迭代计算参数矢量轨迹的期望而获得的，而没有任何由于过渡和奖励的采样引起的变化。
+我们没有直接显示应用强调TD算法的结果，因为它在Baird的反例上的方差很高，以至于在计算实验中几乎不可能获得一致的结果。
+该算法在理论上收敛于该问题的最优解，但实际上并没有。我们将在下一节中讨论减少所有这些算法的方差的主题。
+
+.. figure:: images/figure-11.6.png
+
+    **图11.6：** 一步强调TD算法对Baird反例的期望的行为。步长为 :math:`\alpha=0.03`。
 
 
 11.9 减小误差
 ---------------
 
+与在策略学习相比，离策略学习本质上具有更大的差异。
+这并不奇怪；如果你收到与策略关系不太密切的数据，您应该期望减少对策略价值的学习。
+在极端情况下，人们可能无法学到任何东西。例如，你不能期望通过烹饪晚餐学习如何开车。
+只有当目标和行为策略相关时，如果他们访问类似的状态并采取类似的行动，你才能够在离策略训练方面取得重大进展。
+
+另一方面，任何策略都有许多邻居，许多类似的策略，在所访问的状态和所选择的行动中存在相当大的重叠，但这些策略并不相同。
+离策略学习的存在理由是能够推广到大量相关但不相同的策略。问题仍然是如何充分利用这种经验。
+现在我们有一些稳定的期望值的方法（如果步长设置正确），注意力自然会转向减少估计的方差。
+有许多可能的想法，我们可以在这个介绍性文本中触及其中的一些。
+
+为什么控制方差在基于重要性采样的离策略方法中尤其重要？正如我们所看到的，重要性采样通常涉及策略比率的乘积。
+比率总是一个期望值（5.13），但它们的实际值可能非常高或低至零。
+连续比率是不相关的，因此它们的乘积也总是具有期望价值，但它们可能具有非常高的方差。
+回想一下，这些比率乘以SGD方法中的步长，因此高方差意味着采取大小差异很大的步骤。
+这对于SGD来说是有问题的，因为偶尔会有非常大的步骤。它们不能太大，以至于将参数带到具有非常不同梯度的空间的一部分。
+SGD方法依赖于对多个步骤进行平均以获得对梯度的良好感觉，并且如果它们从单个样本中进行大的移动，则它们变得不可靠。
+如果将步长参数设置得足够小以防止这种情况，那么预期的步骤可能会非常小，导致学习速度非常慢。
+Polyak-Ruppert求平均（Polyak，1990；Ruppert，1988；Polyak和Juditsky，1992）的动量概念（Derthick，1984），或者这些想法的进一步扩展可能会有很大帮助。
+自适应地设置参数矢量的不同分量的单独步长的方法也是相关的（例如，Jacobs，1988；Sutton，1992b，c），
+Karampatziakis和Langford（2010）的“重要性权重意识”更新也是如此。
+
+在第5章中，我们看到加权重要性采样如何表现得更好，与普通重要性采样相比，方差更新更低。
+然而，使加权重要性采样适应函数近似是具有挑战性的，并且可能只能在 :math:`O(d)` 复杂度下进行（Mahmood和Sutton，2015）。
+
+树备份算法（第7.5节）表明，可以在不使用重要性采样的情况下执行一些离策略学习。
+这个想法已经扩展到离策略案例，以便生成稳定且更有效的方法，该方法由Munos，Stepleton，Harutyunyan和Bellemare（2016）以及Mahmood，Yu和Sutton（2017）提出。
+
+另一种补充策略是允许目标策略部分地由行为策略决定，以至于它与创建大的重要性采样比率永远不会如此不同。
+例如，可以通过参考行为策略来定义目标策略，如在Precup等人（2006年）提出的“识别器”中那样。
+
 
 11.10 总结
 ---------------
 
+离策略学习是一个诱人的挑战，测试我们在设计稳定和有效的学习算法方面的独创性。
+表格式Q-learning使得离策略学习看起来很容易，并且它对预期的Sarsa和树备份算法有自然的概括。
+但正如我们在本章中所看到的，将这些思想扩展到显着的函数近似，甚至线性函数近似，都涉及新的挑战，并迫使我们加深对强化学习算法的理解。
+
+为什么要这么长？寻求离策略算法的一个原因是为处理探索和开发之间的权衡提供灵活性。
+另一个是自由行为学习，并避免目标策略的独裁。
+TD学习似乎提供了并行学习多个事物的可能性，即使用一种经验流同时解决许多任务。
+我们当然可以在特殊情况下这样做，但不是在我们想要的每种情况下，或者我们希望的那样。
+
+在本章中，我们将离策略学习的挑战分为两部分。
+第一部分，纠正行为策略的学习目标，直接使用前面为表格案例设计的技术来处理，虽然代价是增加更新的方差，从而减慢学习。
+高方差可能永远是对离策略学习的挑战。
+
+离策略学习挑战的第二部分出现在涉及自举的半梯度TD方法的不稳定性中。
+我们寻求强大的函数近似，离策略学习以及自举TD方法的效率和灵活性，
+但是将这个 *致命三元组* 的所有三个方面组合在一个算法中而不引入不稳定的可能性是具有挑战性的。
+有过几次尝试。最受欢迎的是寻求在Bellman误差中执行真正的随机梯度下降（SGD）（也就是Bellman残差）。
+然而，我们的分析得出结论，在许多情况下这不是一个吸引人的目标，并且无论如何使用学习算法是不可能实现的──
+:math:`\overline{\mathrm{BE}}` 的梯度不能从仅显示特征向量而非基础状态的经验中学习。
+另一种方法，梯度TD方法，在 *投影* 的Bellman误差中执行SGD。
+:math:`\overline{\mathrm{PBE}}` 的梯度可以用 :math:`O(d)` 复杂度来学习，但是以具有第二步长的第二参数矢量为代价。
+最新的方法系列，强调TD方法，改进了重新权重更新的旧观念，强调了一些并且不再强调其他方法。
+通过这种方式，他们通过计算简单的半梯度方法恢复了使在策略学习稳定的特殊属性。
+
+整个离策略学习领域相对较新且不稳定。哪种方法最佳或甚至足够尚不清楚。
+本章末尾介绍的新方法的复杂性是否真的有必要？哪些可以与方差减少方法有效结合？
+离策略学习的潜力仍然很诱人，实现这一目标的最佳途径仍然是个谜。
+
 
 书目和历史评论
 ---------------
+
+**11.1** 第一种半梯度方法是线性TD(:math:`\lambda`)（Sutton，1988）。
+“半梯度”这个名字是最近的（Sutton，2015a）。
+在Sutton，Mahmood和White（2016）之前，可能尚未明确说明具有一般重要性采样率的半梯度离策略TD(0)，
+但行动价值形式由Precup，Sutton和Singh（2000年）引入 ），他们也做了这些算法的资格跟踪形式（见第12章）。
+他们持续的，不折扣的形式尚未得到重大探索。这里给出的n步形式是新的。
+
+**11.2** 最早的 :math:`w-\text{to}-2w` 例子由Tsitsiklis和Van Roy（1996）提供，
+他们也在第263页的框中介绍了具体的反例。Baird的反例是由于Baird（1995），尽管我们在这里提出的版本略有修改。
+Gordon（1995,1996b）开发了函数近似的平均方法。
+Boyan和Moore（1995）给出了使用离策略DP方法和更复杂的函数近似方法的不稳定性的其他例子。
+Bradtke（1993）给出了一个例子，其中在线性二次调节问题中使用线性函数近似的Q-learning收敛于不稳定策略。
+
+**11.3** 致命的三元组首先由Sutton（1995b）确定，并由Tsitsiklis和Van Roy（1997）进行了彻底的分析。
+“致命三元组”这个名字归功于Sutton（2015a）。
+
+**11.4** 这种线性分析由Tsitsiklis和Van Roy（1996; 1997）开创，包括动态规划算子。
+图11.3中的图由Lagoudakis和Parr（2003）引入。
+我们所谓的Bellman算子，用 :math:`B_{\pi}` 表示，更常见的是 :math:`I^{\pi}`，称为“动态规划算子”，
+而广义形式，表示为 :math:`T^{(\lambda)}`，
+称为“TD(:math:`\lambda`)算子”（Tsitsiklis和范罗伊，1996年，1997年）。
+
+**11.5** :math:`\overline{\mathrm{BE}}` 最初是作为Schweitzer和Seidmann（1985）的
+动态规划的目标函数提出的。Baird（1995,1999）将其扩展到基于随机梯度下降的TD学习。
+在文献中，:math:`\overline{\mathrm{BE}}` 最小化通常被称为Bellman残差最小化。
+
+最早的A分裂例子是由于Dayan（1992）。这里给出的两种形式由Sutton等人介绍。 （2009年a）。
+
+**11.6** 本节内容是本书的新内容。
+
+**11.7** Sutton，Szepesvari和Maei（2009b）介绍了梯度-TD方法。
+Sutton等（2009a）和Mahmood等（2014）介绍了本节中强调的方法。
+Mahadevan等（2014）开发了近端TD方法的主要扩展。
+迄今为止对梯度-TD和相关方法进行的最敏感的实证研究由Geist和Scherrer（2014），Dann，Neumann和Peters（2014），White（2015）
+以及Ghiassian，Patterson，White，Sutton和White（2018）给出。
+Yu（2017）提出了梯度-TD方法理论的最新发展。
+
+**11.8** Sutton，Mahmood和White（2016）介绍了强调-TD方法。
+Yu（2015; 2016; Yu，Mahmood和Sutton，2017），Hallak，Tamar和Mannor（2015）
+以及Hallak，Tamar，Munos和Mannor（2016）后来建立了完整的收敛证明和其他理论。
 
 
 .. [1]
@@ -809,3 +1105,7 @@ SGD的吸引力是如此之大，以至于已经付出了巨大的努力来寻�
 
 .. [3]
     所有状态都可以将所有MRP视为单一行动的MDP；我们对MRP的总结也适用于MDP。
+
+.. [4]
+    在离策略情况下，矩阵 :math:`\mathbf{A}` 通常定义为
+    :math:`\mathbb{E}_{s \sim b}\left[\mathbf{x}(s) \mathbb{E}\left[\mathbf{x}\left(S_{t+1}\right)^{\top} | S_{t}=s, A_{t} \sim \pi\right]\right]`。
